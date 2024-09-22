@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Internet Speed Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #000000;
+            color: #ffffff;
+        }
+        .container {
+            text-align: center;
+        }
+        #speed {
+            font-size: 8rem;
+            font-weight: bold;
+            margin: 1rem 0;
+            transition: font-size 0.5s ease;
+        }
+        #unit {
+            font-size: 2rem;
+            opacity: 0.7;
+        }
+        #status {
+            font-size: 1.2rem;
+            margin-top: 1rem;
+            height: 1.5em;
+        }
+        .small {
+            font-size: 4rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="speed">0</div>
+        <div id="unit">Mbps</div>
+        <div id="status"></div>
+    </div>
+
+    <script>
+        const speedElement = document.getElementById('speed');
+        const statusElement = document.getElementById('status');
+        const fileSizes = [1, 10, 100]; // MB
+        let currentFileIndex = 0;
+        let totalSpeed = 0;
+        let testCount = 0;
+
+        function setStatus(message) {
+            statusElement.textContent = message;
+        }
+
+        function updateSpeed(speed) {
+            speedElement.textContent = speed.toFixed(2);
+            if (speed < 10) {
+                speedElement.classList.add('small');
+            } else {
+                speedElement.classList.remove('small');
+            }
+        }
+
+        async function testDownloadSpeed() {
+            const fileSize = fileSizes[currentFileIndex];
+            const startTime = new Date().getTime();
+            
+            try {
+                const response = await fetch(`/download/${fileSize}`);
+                await response.blob();
+                const endTime = new Date().getTime();
+                const duration = (endTime - startTime) / 1000; // seconds
+                
+                const speed = await getSpeedFromServer(fileSize, duration);
+                totalSpeed += speed;
+                testCount++;
+                updateSpeed(totalSpeed / testCount);
+                
+                currentFileIndex = (currentFileIndex + 1) % fileSizes.length;
+                setStatus(`Testing with ${fileSizes[currentFileIndex]}MB file...`);
+                setTimeout(testDownloadSpeed, 100); // Small delay before next test
+            } catch (error) {
+                console.error('Error during speed test:', error);
+                setStatus('Error occurred. Retrying...');
+                setTimeout(testDownloadSpeed, 2000); // Retry after 2 seconds
+            }
+        }
+
+        async function getSpeedFromServer(size, timeTaken) {
+            const response = await fetch(`/speed?size=${size}&time_taken=${timeTaken}`);
+            const data = await response.json();
+            return data.speed;
+        }
+
+        // Start the speed test automatically
+        setStatus('Starting speed test...');
+        testDownloadSpeed();
+    </script>
+</body>
+</html>
