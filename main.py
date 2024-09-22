@@ -1,6 +1,7 @@
 import os
 import time
-from fastapi import FastAPI, File, UploadFile, HTTPException
+import random
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,63 +18,54 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Directory to store uploaded files and serve static files
-UPLOAD_DIR = "static/uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# Directory for test file
+TEST_DIR = "test_files"
+os.makedirs(TEST_DIR, exist_ok=True)
+
+# Test file path
+TEST_FILE_PATH = os.path.join(TEST_DIR, "test_file_100MB.bin")
 
 # Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Create test files for download speed test
-DOWNLOAD_FILE_SIZES = [1, 10, 100]  # sizes in MB
-for size in DOWNLOAD_FILE_SIZES:
-    file_path = os.path.join(UPLOAD_DIR, f"test_file_{size}MB.bin")
-    if not os.path.exists(file_path):
-        with open(file_path, "wb") as f:
-            f.write(os.urandom(size * 1024 * 1024))
+def create_test_file():
+    """Create a 100MB test file with random data."""
+    file_size = 100 * 1024 * 1024  # 100 MB
+    with open(TEST_FILE_PATH, "wb") as f:
+        f.write(os.urandom(file_size))
+
+@app.on_event("startup")
+async def startup_event():
+    """Create test file on startup if it doesn't exist."""
+    if not os.path.exists(TEST_FILE_PATH):
+        create_test_file()
 
 @app.get("/")
 async def read_root():
     return FileResponse("static/index.html")
 
-@app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+@app.get("/download")
+async def download_file():
+    if not os.path.exists(TEST_FILE_PATH):
+        raise HTTPException(status_code=404, detail="Test file not found")
+    return FileResponse(TEST_FILE_PATH, filename="test_file_100MB.bin")
+
+@app.get("/upload")
+async def simulate_upload():
+    """Simulate an upload by reading the test file."""
     start_time = time.time()
     
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
-    try:
-        with open(file_path, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    with open(TEST_FILE_PATH, "rb") as f:
+        f.read()  # Read the entire file
     
     end_time = time.time()
-    file_size = os.path.getsize(file_path)
+    file_size = os.path.getsize(TEST_FILE_PATH)
     upload_speed = file_size / (end_time - start_time) / (1024 * 1024)  # MB/s
     
     return JSONResponse({
-        "filename": file.filename,
         "size": file_size,
         "speed": round(upload_speed, 2)
     })
-
-@app.get("/download/{size}")
-async def download_file(size: int):
-    if size not in DOWNLOAD_FILE_SIZES:
-        raise HTTPException(status_code=400, detail="Invalid file size")
-    
-    file_path = os.path.join(UPLOAD_DIR, f"test_file_{size}MB.bin")
-    return FileResponse(file_path, filename=f"speed_test_{size}MB.bin")
-
-@app.get("/speed")
-async def get_speed(size: int, time_taken: float):
-    if size not in DOWNLOAD_FILE_SIZES:
-        raise HTTPException(status_code=400, detail="Invalid file size")
-    
-    file_size = size * 1024 * 1024  # Convert MB to bytes
-    speed = file_size / time_taken / (1024 * 1024)  # MB/s
-    return JSONResponse({"speed": round(speed, 2)})
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

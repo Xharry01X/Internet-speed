@@ -12,94 +12,134 @@
             align-items: center;
             height: 100vh;
             margin: 0;
-            background-color: #000000;
-            color: #ffffff;
+            background-color: #f0f0f0;
         }
         .container {
             text-align: center;
+            background-color: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
-        #speed {
-            font-size: 8rem;
+        .speed-display {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 1rem;
+        }
+        .speed-box {
+            text-align: center;
+        }
+        .speed {
+            font-size: 2.5rem;
             font-weight: bold;
-            margin: 1rem 0;
-            transition: font-size 0.5s ease;
         }
-        #unit {
-            font-size: 2rem;
-            opacity: 0.7;
+        .unit {
+            font-size: 1rem;
         }
         #status {
-            font-size: 1.2rem;
-            margin-top: 1rem;
-            height: 1.5em;
+            margin-bottom: 1rem;
         }
-        .small {
-            font-size: 4rem;
+        .btn {
+            font-size: 1rem;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        #progressBar {
+            width: 100%;
+            background-color: #ddd;
+            margin-top: 1rem;
+        }
+        #progressBar > div {
+            height: 10px;
+            background-color: #4CAF50;
+            width: 0;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div id="speed">0</div>
-        <div id="unit">Mbps</div>
-        <div id="status"></div>
+        <h1>Internet Speed Test</h1>
+        <div class="speed-display">
+            <div class="speed-box">
+                <div class="speed" id="uploadSpeed">0.00</div>
+                <div class="unit">Mbps Upload</div>
+            </div>
+            <div class="speed-box">
+                <div class="speed" id="downloadSpeed">0.00</div>
+                <div class="unit">Mbps Download</div>
+            </div>
+        </div>
+        <div id="status">Ready to start test</div>
+        <button id="startButton" class="btn">Start Test</button>
+        <div id="progressBar"><div></div></div>
     </div>
 
     <script>
-        const speedElement = document.getElementById('speed');
+        const uploadSpeedElement = document.getElementById('uploadSpeed');
+        const downloadSpeedElement = document.getElementById('downloadSpeed');
         const statusElement = document.getElementById('status');
-        const fileSizes = [1, 10, 100]; // MB
-        let currentFileIndex = 0;
-        let totalSpeed = 0;
-        let testCount = 0;
+        const startButton = document.getElementById('startButton');
+        const progressBar = document.getElementById('progressBar').firstElementChild;
 
-        function setStatus(message) {
-            statusElement.textContent = message;
+        startButton.addEventListener('click', startTest);
+
+        async function startTest() {
+            startButton.disabled = true;
+            uploadSpeedElement.textContent = "0.00";
+            downloadSpeedElement.textContent = "0.00";
+            progressBar.style.width = '0%';
+            
+            await testUploadSpeed();
+            await testDownloadSpeed();
+            
+            statusElement.textContent = "Speed test completed";
+            startButton.disabled = false;
         }
 
-        function updateSpeed(speed) {
-            speedElement.textContent = speed.toFixed(2);
-            if (speed < 10) {
-                speedElement.classList.add('small');
-            } else {
-                speedElement.classList.remove('small');
+        async function testUploadSpeed() {
+            statusElement.textContent = "Testing upload speed...";
+            try {
+                const response = await fetch('/upload');
+                const result = await response.json();
+                uploadSpeedElement.textContent = result.speed.toFixed(2);
+            } catch (error) {
+                console.error('Error:', error);
+                statusElement.textContent = "An error occurred during upload test";
             }
         }
 
         async function testDownloadSpeed() {
-            const fileSize = fileSizes[currentFileIndex];
+            statusElement.textContent = "Testing download speed...";
             const startTime = new Date().getTime();
             
             try {
-                const response = await fetch(`/download/${fileSize}`);
-                await response.blob();
+                const response = await fetch('/download');
+                const reader = response.body.getReader();
+                let receivedLength = 0;
+
+                while(true) {
+                    const {done, value} = await reader.read();
+                    if (done) {
+                        break;
+                    }
+                    receivedLength += value.length;
+                    const percentComplete = (receivedLength / (100 * 1024 * 1024)) * 100;
+                    progressBar.style.width = percentComplete + '%';
+                }
+
                 const endTime = new Date().getTime();
-                const duration = (endTime - startTime) / 1000; // seconds
-                
-                const speed = await getSpeedFromServer(fileSize, duration);
-                totalSpeed += speed;
-                testCount++;
-                updateSpeed(totalSpeed / testCount);
-                
-                currentFileIndex = (currentFileIndex + 1) % fileSizes.length;
-                setStatus(`Testing with ${fileSizes[currentFileIndex]}MB file...`);
-                setTimeout(testDownloadSpeed, 100); // Small delay before next test
+                const duration = (endTime - startTime) / 1000;
+                const downloadSpeed = (receivedLength / duration / 125000).toFixed(2);
+                downloadSpeedElement.textContent = downloadSpeed;
             } catch (error) {
-                console.error('Error during speed test:', error);
-                setStatus('Error occurred. Retrying...');
-                setTimeout(testDownloadSpeed, 2000); // Retry after 2 seconds
+                console.error('Error:', error);
+                statusElement.textContent = "An error occurred during download test";
             }
         }
-
-        async function getSpeedFromServer(size, timeTaken) {
-            const response = await fetch(`/speed?size=${size}&time_taken=${timeTaken}`);
-            const data = await response.json();
-            return data.speed;
-        }
-
-        // Start the speed test automatically
-        setStatus('Starting speed test...');
-        testDownloadSpeed();
     </script>
 </body>
 </html>
